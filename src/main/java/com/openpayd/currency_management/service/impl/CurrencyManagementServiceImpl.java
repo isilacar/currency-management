@@ -1,11 +1,16 @@
 package com.openpayd.currency_management.service.impl;
 
 import com.openpayd.currency_management.client.ExchangeClient;
+import com.openpayd.currency_management.client.response.CurrencyConversionApiResponse;
 import com.openpayd.currency_management.client.response.ExchangeRateApiResponse;
+import com.openpayd.currency_management.dto.CurrencyConversionDto;
+import com.openpayd.currency_management.entity.CurrencyConverterEntity;
 import com.openpayd.currency_management.enums.CurrencySymbol;
 import com.openpayd.currency_management.exception.CurrencySymbolNotFoundException;
 import com.openpayd.currency_management.exception.CurrencySymbolNullException;
 import com.openpayd.currency_management.mapper.ExchangeMapper;
+import com.openpayd.currency_management.repository.CurrencyManagementRepository;
+import com.openpayd.currency_management.request.CurrencyConversionRequest;
 import com.openpayd.currency_management.request.ExchangeRateRequest;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
 import com.openpayd.currency_management.service.CurrencyManagementService;
@@ -15,6 +20,7 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -25,6 +31,8 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
 
     private final ExchangeClient exchangeClient;
     private final ExchangeMapper exchangeMapper;
+    private final CurrencyManagementRepository currencyManagementRepository;
+
     private static final Logger logger = LogManager.getLogger(CurrencyManagementServiceImpl.class);
 
     @Value("${currency-layer.api.key}")
@@ -36,12 +44,7 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
             exchangeRateRequest.getBase(), 
             exchangeRateRequest.getTarget());
 
-        if(Objects.isNull(exchangeRateRequest.getBase()) || Objects.isNull(exchangeRateRequest.getTarget())) {
-            logger.error("Currency symbols are null. Base: {}, Target: {}", 
-                exchangeRateRequest.getBase(), 
-                exchangeRateRequest.getTarget());
-            throw new CurrencySymbolNullException("Currency symbols can not be null. Please enter valid currency codes: "+ Arrays.toString(CurrencySymbol.values()));
-        }
+        checkNullCurrency(exchangeRateRequest.getBase(), exchangeRateRequest.getTarget(), "Currency symbols can not be null. Please enter valid currency codes: " + Arrays.toString(CurrencySymbol.values()));
 
         String base = exchangeRateRequest.getBase().toUpperCase();
         String target = exchangeRateRequest.getTarget().toUpperCase();
@@ -55,6 +58,45 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
         
         logger.info("Data stored in cache: {}-{}", base, target);
         return response;
+    }
+
+    @Transactional
+    public CurrencyConversionDto currencyConvert(CurrencyConversionRequest currencyConversionRequest) {
+        logger.info("Starting currency conversion: {} {} to {}",
+                currencyConversionRequest.getAmount(),
+                currencyConversionRequest.getBase(),
+                currencyConversionRequest.getTarget());
+
+        checkNullCurrency(currencyConversionRequest.getBase(), currencyConversionRequest.getTarget(),
+                ("Currency symbols can not be null. Please enter valid currency codes: "+ Arrays.toString(CurrencySymbol.values())));
+
+        String base = currencyConversionRequest.getBase().toUpperCase();
+        String target = currencyConversionRequest.getTarget().toUpperCase();
+
+        validateCurrencySymbol(base, "base");
+        validateCurrencySymbol(target, "target");
+
+        logger.debug("Making API call to convert currency: {} {} to {}",
+                currencyConversionRequest.getAmount(), base, target);
+        CurrencyConversionApiResponse currencyConversionApiResponse = exchangeClient.convertCurrency(apiKey, base, target,
+                currencyConversionRequest.getAmount());
+
+        CurrencyConverterEntity currencyConverterEntity = exchangeMapper.toCurrencyConverterEntity(currencyConversionApiResponse);
+        CurrencyConverterEntity savedCurrencyConverter = currencyManagementRepository.save(currencyConverterEntity);
+
+        logger.info("Currency conversion completed successfully. Transaction ID: {}",
+                savedCurrencyConverter.getTransactionId());
+        return exchangeMapper.toCurrencyConversionDto(savedCurrencyConverter);
+    }
+
+    private static void checkNullCurrency(String currencyConversionRequest, String currencyConversionRequest1, String message) {
+        if (Objects.isNull(currencyConversionRequest) ||
+                Objects.isNull(currencyConversionRequest1)) {
+            logger.error("Currency symbols are null. Base: {}, Target: {}",
+                    currencyConversionRequest,
+                    currencyConversionRequest1);
+            throw new CurrencySymbolNullException(message);
+        }
     }
 
     private void validateCurrencySymbol(String symbol, String type) {
