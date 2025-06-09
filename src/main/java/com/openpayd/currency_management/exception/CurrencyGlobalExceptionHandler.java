@@ -7,6 +7,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -20,20 +22,20 @@ public class CurrencyGlobalExceptionHandler {
     @ExceptionHandler(CurrencySymbolNullException.class)
     public ResponseEntity<ErrorResponse> handleCurrencySymbolNull(CurrencySymbolNullException ex, WebRequest webRequest) {
         return new ResponseEntity<>(new ErrorResponse(
-            getDate(),
-            "NULL_CURRENCY_SYMBOL",
-            ex.getMessage(),
-            webRequest.getDescription(false)
+                getDate(),
+                "NULL_CURRENCY_SYMBOL",
+                ex.getMessage(),
+                webRequest.getDescription(false)
         ), HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(CurrencySymbolNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleCurrencySymbolNotFound(CurrencySymbolNotFoundException ex, WebRequest webRequest) {
         return new ResponseEntity<>(new ErrorResponse(
-            getDate(),
-            "INVALID_CURRENCY_SYMBOL",
-            ex.getMessage(),
-            webRequest.getDescription(false)
+                getDate(),
+                "INVALID_CURRENCY_SYMBOL",
+                ex.getMessage(),
+                webRequest.getDescription(false)
         ), HttpStatus.BAD_REQUEST);
     }
 
@@ -67,6 +69,46 @@ public class CurrencyGlobalExceptionHandler {
         ), HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(FileUploadException.class)
+    public ResponseEntity<ErrorResponse> handleFileUploadException(FileUploadException ex, WebRequest webRequest) {
+        return new ResponseEntity<>(new ErrorResponse(
+                getDate(),
+                "FILE_UPLOAD_ERROR",
+                ex.getMessage(),
+                webRequest.getDescription(false)
+        ), HttpStatus.BAD_REQUEST);
+    }
+
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ErrorResponse> handleMissingServletRequestPartException(MissingServletRequestPartException ex, WebRequest webRequest) {
+        return new ResponseEntity<>(new ErrorResponse(
+                getDate(),
+                "FILE_UPLOAD_ERROR",
+                "Required file part is missing. Please upload a CSV file.",
+                webRequest.getDescription(false)
+        ), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ErrorResponse> handleMultipartException(MultipartException ex, WebRequest webRequest) {
+        return new ResponseEntity<>(new ErrorResponse(
+                getDate(),
+                "FILE_UPLOAD_ERROR",
+                "Error occurred while processing the file upload. Please ensure you are uploading a valid CSV file.",
+                webRequest.getDescription(false)
+        ), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(BulkCurrencyConversionException.class)
+    public ResponseEntity<ErrorResponse> handleBulkCurrencyConversionException(BulkCurrencyConversionException ex, WebRequest webRequest) {
+        return new ResponseEntity<>(new ErrorResponse(
+                getDate(),
+                ex.getErrorCode(),
+                ex.getMessage(),
+                webRequest.getDescription(false)
+        ), HttpStatus.BAD_REQUEST);
+    }
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleMethodArgumentNotValid(
             MethodArgumentNotValidException ex) {

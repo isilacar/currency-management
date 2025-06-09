@@ -5,15 +5,13 @@ import com.openpayd.currency_management.client.response.CurrencyConversionApiRes
 import com.openpayd.currency_management.client.response.ExchangeRateApiResponse;
 import com.openpayd.currency_management.dto.CurrencyConversionDto;
 import com.openpayd.currency_management.entity.CurrencyConverterEntity;
-import com.openpayd.currency_management.exception.CurrencySymbolNotFoundException;
-import com.openpayd.currency_management.exception.CurrencySymbolNullException;
-import com.openpayd.currency_management.exception.TransactionHistoryNotFoundException;
-import com.openpayd.currency_management.exception.TransactionParameterRequiredException;
+import com.openpayd.currency_management.exception.*;
 import com.openpayd.currency_management.mapper.ExchangeMapper;
 import com.openpayd.currency_management.repository.CurrencyManagementRepository;
 import com.openpayd.currency_management.request.CurrencyConversionRequest;
 import com.openpayd.currency_management.request.CurrencyHistoryRequest;
 import com.openpayd.currency_management.request.ExchangeRateRequest;
+import com.openpayd.currency_management.response.CurrencyConversionResponse;
 import com.openpayd.currency_management.response.CurrencyConverterHistoryPaginationResponse;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,8 +22,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
@@ -60,10 +61,6 @@ class CurrencyManagementServiceImplTest {
     private Page<CurrencyConverterEntity> currencyConverterEntityPage;
     private CurrencyConverterHistoryPaginationResponse currencyConverterHistoryPaginationResponse;
     private CurrencyHistoryRequest currencyHistoryRequest;
-
-
-
-
 
     @BeforeEach
     void setUp() {
@@ -435,6 +432,187 @@ class CurrencyManagementServiceImplTest {
         verify(exchangeMapper, never()).getCurrencyHistoryPagination(any());
     }
 
+    @Test
+    void processBulkConversion_WhenValidFile_ShouldReturnConversionResponses(){
+        String csvContent = "base,target,amount\nUSD,EUR,100\nEUR,TRY,200";
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "conversions.csv",
+                MediaType.TEXT_PLAIN_VALUE,
+                csvContent.getBytes()
+        );
+
+        CurrencyConversionApiResponse response1 = createDummyCurrencyConversionResponse("USD", "EUR", 100.0);
+        CurrencyConversionApiResponse response2 = createDummyCurrencyConversionResponse("EUR", "TRY", 200.0);
+
+        when(exchangeClient.convertCurrency(anyString(), anyString(), anyString(), anyDouble()))
+                .thenReturn(response1);
+        when(exchangeClient.convertCurrency(anyString(), anyString(), anyString(), anyDouble()))
+                .thenReturn(response2);
+
+        CurrencyConverterEntity entity1 = getEntity(response1);
+
+        CurrencyConverterEntity entity2=getEntity(response2);
+
+        when(exchangeMapper.convertCurrency(any(CurrencyConversionRequest.class), any(CurrencyConversionApiResponse.class)))
+                .thenReturn(entity1, entity2);
+
+        when(currencyManagementRepository.save(any(CurrencyConverterEntity.class))).thenReturn(entity1, entity2);
+
+        CurrencyConversionResponse responseDto1 = getResponseDto(entity1);
+
+        CurrencyConversionResponse responseDto2 = getResponseDto(entity2);
+
+        when(exchangeMapper.toCurrencyConversionResponse(any(CurrencyConverterEntity.class))).thenReturn(responseDto1, responseDto2);
+
+
+        List<CurrencyConversionResponse> result = currencyManagementService.processBulkConversions(file);
+
+
+        assertNotNull(result);
+        assertEquals(2, result.size());
+
+        CurrencyConversionResponse firstResponse = result.get(0);
+        assertEquals("USD", firstResponse.getBaseCurrency());
+        assertEquals("EUR", firstResponse.getTargetCurrency());
+        assertEquals(100.0, firstResponse.getAmount());
+        assertEquals(150.0, firstResponse.getConvertedAmount());
+        assertEquals(1.5, firstResponse.getExchangeRate());
+
+        CurrencyConversionResponse secondResponse = result.get(1);
+        assertEquals("EUR", secondResponse.getBaseCurrency());
+        assertEquals("TRY", secondResponse.getTargetCurrency());
+        assertEquals(200.0, secondResponse.getAmount());
+        assertEquals(300.0, secondResponse.getConvertedAmount());
+        assertEquals(1.5, secondResponse.getExchangeRate());
+
+        verify(exchangeClient, times(2)).convertCurrency(anyString(), anyString(), anyString(), anyDouble());
+        verify(exchangeMapper, times(2)).convertCurrency(any(), any());
+        verify(currencyManagementRepository, times(2)).save(any());
+        verify(exchangeMapper, times(2)).toCurrencyConversionResponse(any(CurrencyConverterEntity.class));
+    }
+
+    @Test
+    void processBulkConversion_WhenInvalidCurrencySymbol_ShouldThrowCurrencySymbolNotFoundException() throws IOException {
+
+        String csvContent = "base,target,amount\nINVALID,EUR,100";
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "conversions.csv",
+                MediaType.TEXT_PLAIN_VALUE,
+                csvContent.getBytes()
+        );
+
+
+        CurrencySymbolNotFoundException exception = assertThrows(
+                CurrencySymbolNotFoundException.class,
+                () -> currencyManagementService.processBulkConversions(file)
+        );
+
+        assertTrue(exception.getMessage().contains("Invalid base currency symbol"));
+        verify(exchangeClient, never()).convertCurrency(anyString(), anyString(), anyString(), anyDouble());
+        verify(exchangeMapper, never()).convertCurrency(any(), any());
+        verify(currencyManagementRepository, never()).save(any());
+    }
+
+    @Test
+    void processBulkConversion_WhenInvalidAmount_ShouldThrowBulkCurrencyConversionException() throws IOException {
+
+        String csvContent = "base,target,amount\nUSD,EUR,-100";
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "conversions.csv",
+                MediaType.TEXT_PLAIN_VALUE,
+                csvContent.getBytes()
+        );
+
+
+        BulkCurrencyConversionException exception = assertThrows(
+                BulkCurrencyConversionException.class,
+                () -> currencyManagementService.processBulkConversions(file)
+        );
+
+        assertTrue(exception.getMessage().contains("Invalid amount"));
+        verify(exchangeClient, never()).convertCurrency(anyString(), anyString(), anyString(), anyDouble());
+        verify(exchangeMapper, never()).convertCurrency(any(), any());
+        verify(currencyManagementRepository, never()).save(any());
+    }
+
+    @Test
+    void processBulkConversion_WhenFileIsEmpty_ShouldThrowFileUploadException() {
+        MockMultipartFile emptyFile = new MockMultipartFile(
+                "file",
+                "test.csv",
+                MediaType.TEXT_PLAIN_VALUE,
+                new byte[0]
+        );
+
+        FileUploadException exception = assertThrows(FileUploadException.class,
+                () -> currencyManagementService.processBulkConversions(emptyFile));
+
+        assertEquals("Please upload a valid CSV file.", exception.getMessage());
+    }
+
+    @Test
+    void processBulkConversion_WhenFileReadError_ShouldThrowFileUploadException() throws IOException {
+        MockMultipartFile mockFile = mock(MockMultipartFile.class);
+        when(mockFile.getOriginalFilename()).thenReturn("test.csv");
+        when(mockFile.isEmpty()).thenReturn(false);
+        when(mockFile.getInputStream()).thenThrow(new IOException("Test error"));
+
+        FileUploadException exception = assertThrows(
+                FileUploadException.class,
+                () -> currencyManagementService.processBulkConversions(mockFile)
+        );
+
+        assertTrue(exception.getMessage().contains("Error processing the uploaded file"));
+        verify(exchangeClient, never()).convertCurrency(anyString(), anyString(), anyString(), anyDouble());
+        verify(exchangeMapper, never()).convertCurrency(any(), any());
+        verify(currencyManagementRepository, never()).save(any());
+    }
+
+    @Test
+    void processBulkConversion_WhenFileExtensionIsNotCsv_ShouldThrowFileUploadException() {
+        MockMultipartFile invalidFile = new MockMultipartFile(
+                "file",
+                "test.txt",
+                MediaType.TEXT_PLAIN_VALUE,
+                "test content".getBytes()
+        );
+
+        FileUploadException exception = assertThrows(FileUploadException.class,
+                () -> currencyManagementService.processBulkConversions(invalidFile));
+
+        assertEquals("Only CSV files are allowed. Please upload a file with .csv extension.", exception.getMessage());
+    }
+
+    @Test
+    void processBulkConversion_WhenFileNameIsNull_ShouldThrowFileUploadException() {
+        MockMultipartFile nullFileNameFile = new MockMultipartFile(
+                "file",
+                null,
+                MediaType.TEXT_PLAIN_VALUE,
+                "test content".getBytes()
+        );
+
+        FileUploadException exception = assertThrows(FileUploadException.class,
+                () -> currencyManagementService.processBulkConversions(nullFileNameFile));
+
+        assertEquals("Only CSV files are allowed. Please upload a file with .csv extension.", exception.getMessage());
+    }
+
+    @Test
+    void processBulkConversion_WhenFileIsNull_ShouldThrowFileUploadException() {
+        MockMultipartFile nullFile = null;
+
+        FileUploadException exception = assertThrows(FileUploadException.class,
+                () -> currencyManagementService.processBulkConversions(nullFile));
+
+        assertEquals("Please upload a valid CSV file.", exception.getMessage());
+        verify(exchangeClient, never()).convertCurrency(anyString(), anyString(), anyString(), anyDouble());
+        verify(exchangeMapper, never()).convertCurrency(any(), any());
+        verify(currencyManagementRepository, never()).save(any());
+    }
 
     private ExchangeRateApiResponse createDummyExchangeRateResponse(String base, String target) {
         Map<String, Double> quotes = new HashMap<>();
@@ -457,6 +635,28 @@ class CurrencyManagementServiceImplTest {
         response.setResult(amount * 1.5);
 
         return response;
+    }
+
+    private CurrencyConversionResponse getResponseDto(CurrencyConverterEntity entity) {
+        CurrencyConversionResponse responseDto = CurrencyConversionResponse.builder()
+                .baseCurrency(entity.getBaseCurrency())
+                .targetCurrency(entity.getTargetCurrency())
+                .amount(entity.getAmount())
+                .convertedAmount(entity.getConvertedAmount())
+                .exchangeRate(entity.getExchangeRate())
+                .build();
+        return responseDto;
+    }
+
+    private CurrencyConverterEntity getEntity(CurrencyConversionApiResponse response) {
+        CurrencyConverterEntity entity = CurrencyConverterEntity.builder()
+                .baseCurrency(response.getQuery().getFrom())
+                .targetCurrency(response.getQuery().getTo())
+                .amount(response.getQuery().getAmount())
+                .convertedAmount(response.getResult())
+                .exchangeRate(response.getInfo().getQuote())
+                .build();
+        return entity;
     }
 
 }

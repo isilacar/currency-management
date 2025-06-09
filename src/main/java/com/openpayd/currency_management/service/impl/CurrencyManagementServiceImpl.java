@@ -1,20 +1,19 @@
 package com.openpayd.currency_management.service.impl;
 
+import com.opencsv.bean.CsvToBeanBuilder;
 import com.openpayd.currency_management.client.ExchangeClient;
 import com.openpayd.currency_management.client.response.CurrencyConversionApiResponse;
 import com.openpayd.currency_management.client.response.ExchangeRateApiResponse;
 import com.openpayd.currency_management.dto.CurrencyConversionDto;
 import com.openpayd.currency_management.entity.CurrencyConverterEntity;
 import com.openpayd.currency_management.enums.CurrencySymbol;
-import com.openpayd.currency_management.exception.CurrencySymbolNotFoundException;
-import com.openpayd.currency_management.exception.CurrencySymbolNullException;
-import com.openpayd.currency_management.exception.TransactionHistoryNotFoundException;
-import com.openpayd.currency_management.exception.TransactionParameterRequiredException;
+import com.openpayd.currency_management.exception.*;
 import com.openpayd.currency_management.mapper.ExchangeMapper;
 import com.openpayd.currency_management.repository.CurrencyManagementRepository;
 import com.openpayd.currency_management.request.CurrencyConversionRequest;
 import com.openpayd.currency_management.request.CurrencyHistoryRequest;
 import com.openpayd.currency_management.request.ExchangeRateRequest;
+import com.openpayd.currency_management.response.CurrencyConversionResponse;
 import com.openpayd.currency_management.response.CurrencyConverterHistoryPaginationResponse;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
 import com.openpayd.currency_management.service.CurrencyManagementService;
@@ -27,8 +26,13 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -145,6 +149,83 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
         return exchangeMapper.getCurrencyHistoryPagination(result);
     }
 
+    @Transactional
+    public List<CurrencyConversionResponse> processBulkConversions(MultipartFile file) {
+        checkingFileFormat(file);
+
+        logger.info("Starting bulk conversion process for file: {}", file.getOriginalFilename());
+
+        List<CurrencyConversionRequest> requests = getRequests(file);
+
+        logger.info("Successfully parsed {} conversion requests from CSV", requests.size());
+
+        List<CurrencyConversionResponse> responses = new ArrayList<>();
+
+        for (CurrencyConversionRequest request : requests) {
+            logger.info("Processing: {}/{} - Amount: {}",
+                    request.getBase(), request.getTarget(), request.getAmount());
+
+            if (Objects.isNull(request.getBase()) || Objects.isNull(request.getTarget()) || Objects.isNull(request.getAmount())) {
+                logger.error("Null values found in bulk conversion request. Base: {}, Target: {}, Amount: {}",
+                        request.getBase(), request.getTarget(), request.getAmount());
+                throw BulkCurrencyConversionException.invalidRequest(
+                        request.getBase(),
+                        request.getTarget(),
+                        request.getAmount()
+                );
+            }
+
+            validateCurrencySymbol(request.getBase(), "base");
+            validateCurrencySymbol(request.getTarget(), "target");
+
+            if (request.getAmount() <= 0) {
+                logger.error("Invalid amount in bulk conversion: {} for {}/{}",
+                        request.getAmount(), request.getBase(), request.getTarget());
+
+                throw BulkCurrencyConversionException.invalidAmount(
+                        request.getBase(),
+                        request.getTarget(),
+                        request.getAmount()
+                );
+            }
+
+            logger.debug("Making API call for bulk conversion: {} {} to {}",
+                    request.getAmount(), request.getBase(), request.getTarget());
+            CurrencyConversionApiResponse response = exchangeClient.convertCurrency(
+                    apiKey,
+                    request.getBase(),
+                    request.getTarget(),
+                    request.getAmount()
+            );
+
+            CurrencyConverterEntity entity = exchangeMapper.convertCurrency(request, response);
+            CurrencyConverterEntity savedEntity = currencyManagementRepository.save(entity);
+            responses.add(exchangeMapper.toCurrencyConversionResponse(savedEntity));
+            logger.info("Success: {}/{} - Amount: {}",
+                    request.getBase(), request.getTarget(), request.getAmount());
+        }
+
+        logger.info("Bulk conversion completed. Processed {} requests successfully", responses.size());
+        return responses;
+    }
+
+    private List<CurrencyConversionRequest> getRequests(MultipartFile file) {
+        try {
+            logger.debug("Starting to parse CSV file: {}", file.getOriginalFilename());
+            List<CurrencyConversionRequest> requests = new CsvToBeanBuilder<CurrencyConversionRequest>(
+                    new InputStreamReader(file.getInputStream()))
+                    .withType(CurrencyConversionRequest.class)
+                    .withIgnoreLeadingWhiteSpace(true)
+                    .build()
+                    .parse();
+            logger.debug("Successfully parsed CSV file");
+            return requests;
+        } catch (IOException e) {
+            logger.error("Error reading CSV file: {}", e.getMessage());
+            throw new FileUploadException("Error processing the uploaded file. Please ensure it is a valid CSV file.");
+        }
+    }
+
     private static void checkNullCurrency(String currencyConversionRequest, String currencyConversionRequest1, String message) {
         if (Objects.isNull(currencyConversionRequest) ||
                 Objects.isNull(currencyConversionRequest1)) {
@@ -174,6 +255,18 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
         if (!result.hasContent()) {
             logger.error("Transaction history not found: {}", message);
             throw new TransactionHistoryNotFoundException(message);
+        }
+    }
+    private void checkingFileFormat(MultipartFile file) {
+        if (Objects.isNull(file) || file.isEmpty()) {
+            logger.error("Uploaded file is null or empty");
+            throw new FileUploadException("Please upload a valid CSV file.");
+        }
+
+        String fileName = file.getOriginalFilename();
+        if (fileName == null || !fileName.toLowerCase().endsWith(".csv")) {
+            logger.error("Invalid file format: {}", fileName);
+            throw new FileUploadException("Only CSV files are allowed. Please upload a file with .csv extension.");
         }
     }
 
