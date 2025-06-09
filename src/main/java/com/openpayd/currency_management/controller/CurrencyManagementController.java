@@ -5,6 +5,7 @@ import com.openpayd.currency_management.dto.CurrencyConversionDto;
 import com.openpayd.currency_management.request.CurrencyConversionRequest;
 import com.openpayd.currency_management.request.CurrencyHistoryRequest;
 import com.openpayd.currency_management.request.ExchangeRateRequest;
+import com.openpayd.currency_management.response.CurrencyConversionResponse;
 import com.openpayd.currency_management.response.CurrencyConverterHistoryPaginationResponse;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
 import com.openpayd.currency_management.service.CurrencyManagementService;
@@ -15,10 +16,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 @Tag(
     name = "Currency Management API",
@@ -79,6 +80,22 @@ public class CurrencyManagementController {
             @Valid @RequestBody CurrencyHistoryRequest currencyHistoryRequest
     ) {
         return ResponseEntity.ok(currencyManagementService.getConversionHistory(currencyHistoryRequest));
+    }
+
+    @Operation(
+            summary = "Bulk Currency Conversion",
+            description = "Processes multiple currency conversions from a CSV file"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Success"),
+            @ApiResponse(responseCode = "400", description = "Invalid file or parameters"),
+            @ApiResponse(responseCode = "500", description = "Server error")
+    })
+    @PostMapping("/bulk-convert")
+    public ResponseEntity<List<CurrencyConversionResponse>> processBulkConversions(
+            @RequestParam("file") MultipartFile file
+    ) {
+        return ResponseEntity.ok(currencyManagementService.processBulkConversions(file));
     }
 
 } 

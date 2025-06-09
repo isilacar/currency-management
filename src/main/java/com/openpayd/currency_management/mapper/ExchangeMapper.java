@@ -4,6 +4,8 @@ import com.openpayd.currency_management.client.response.CurrencyConversionApiRes
 import com.openpayd.currency_management.client.response.ExchangeRateApiResponse;
 import com.openpayd.currency_management.dto.CurrencyConversionDto;
 import com.openpayd.currency_management.entity.CurrencyConverterEntity;
+import com.openpayd.currency_management.request.CurrencyConversionRequest;
+import com.openpayd.currency_management.response.CurrencyConversionResponse;
 import com.openpayd.currency_management.response.CurrencyConverterHistoryPaginationResponse;
 import com.openpayd.currency_management.response.CurrencyHistoryResponse;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
@@ -32,6 +34,7 @@ public interface ExchangeMapper {
     @Mapping(target = "exchangeRate", source = "info.quote")
     @Mapping(target = "transactionId", expression = "java(generateTransactionId())")
     @Mapping(target = "transactionDate", expression = "java(java.time.LocalDate.now())")
+    @Mapping(target = "id", ignore = true)
     CurrencyConverterEntity toCurrencyConverterEntity(CurrencyConversionApiResponse currencyConversionApiResponse);
 
     CurrencyConversionDto toCurrencyConversionDto(CurrencyConverterEntity currencyConverterEntity);
@@ -42,6 +45,20 @@ public interface ExchangeMapper {
     @Mapping(target = "currentPage", source = "pageable.pageNumber")
     @Mapping(target = "viewedValueCount", source = "pageable.pageSize")
     CurrencyConverterHistoryPaginationResponse getCurrencyHistoryPagination(Page<CurrencyConverterEntity> currencyConverterEntityPage);
+
+    @Mapping(target = "baseCurrency", source = "request.base")
+    @Mapping(target = "targetCurrency", source = "request.target")
+    @Mapping(target = "amount", source = "request.amount")
+    @Mapping(target = "convertedAmount", source = "response.result")
+    @Mapping(target = "exchangeRate", source = "response.info.quote")
+    @Mapping(target = "transactionId", expression = "java(generateTransactionId())")
+    @Mapping(target = "transactionDate", expression = "java(java.time.LocalDate.now())")
+    @Mapping(target = "id", ignore = true)
+    CurrencyConverterEntity convertCurrency(CurrencyConversionRequest request, CurrencyConversionApiResponse response);
+
+
+    CurrencyConversionResponse toCurrencyConversionResponse(CurrencyConverterEntity entity);
+
 
     @Named("getRate")
     default Double getRate(Map<String, Double> quotes) {
