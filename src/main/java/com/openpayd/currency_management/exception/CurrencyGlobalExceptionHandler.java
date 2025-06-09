@@ -10,6 +10,7 @@ import org.springframework.web.context.request.WebRequest;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -33,6 +34,36 @@ public class CurrencyGlobalExceptionHandler {
             "INVALID_CURRENCY_SYMBOL",
             ex.getMessage(),
             webRequest.getDescription(false)
+        ), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(TransactionParameterRequiredException.class)
+    public ResponseEntity<ErrorResponse> handleTransactionParameterRequired(TransactionParameterRequiredException ex, WebRequest webRequest) {
+        return new ResponseEntity<>(new ErrorResponse(
+                getDate(),
+                "TRANSACTION_PARAMETER_REQUIRED",
+                ex.getMessage(),
+                webRequest.getDescription(false)
+        ), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(TransactionHistoryNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleTransactionHistoryNotFoundException(TransactionHistoryNotFoundException ex, WebRequest webRequest) {
+        return new ResponseEntity<>(new ErrorResponse(
+                getDate(),
+                String.valueOf(HttpStatus.NOT_FOUND.value()),
+                ex.getMessage(),
+                webRequest.getDescription(false)
+        ), HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(DateTimeParseException.class)
+    public ResponseEntity<ErrorResponse> handleIDateTimeParseException(DateTimeParseException ex, WebRequest webRequest) {
+        return new ResponseEntity<>(new ErrorResponse(
+                getDate(),
+                "INVALID_DATE_FORMAT",
+                "Invalid date format. Please use yyyy-MM-dd format (e.g., 2025-06-24)",
+                webRequest.getDescription(false)
         ), HttpStatus.BAD_REQUEST);
     }
 

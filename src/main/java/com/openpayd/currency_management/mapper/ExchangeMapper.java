@@ -4,11 +4,15 @@ import com.openpayd.currency_management.client.response.CurrencyConversionApiRes
 import com.openpayd.currency_management.client.response.ExchangeRateApiResponse;
 import com.openpayd.currency_management.dto.CurrencyConversionDto;
 import com.openpayd.currency_management.entity.CurrencyConverterEntity;
+import com.openpayd.currency_management.response.CurrencyConverterHistoryPaginationResponse;
+import com.openpayd.currency_management.response.CurrencyHistoryResponse;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.Named;
+import org.springframework.data.domain.Page;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -32,6 +36,13 @@ public interface ExchangeMapper {
 
     CurrencyConversionDto toCurrencyConversionDto(CurrencyConverterEntity currencyConverterEntity);
 
+    @Mapping(target = "currencyHistoryResponseList", expression = "java(mapToHistoryResponseList(currencyConverterEntityPage.getContent()))")
+    @Mapping(target = "totalValue", source = "totalElements")
+    @Mapping(target = "totalPages", source = "totalPages")
+    @Mapping(target = "currentPage", source = "pageable.pageNumber")
+    @Mapping(target = "viewedValueCount", source = "pageable.pageSize")
+    CurrencyConverterHistoryPaginationResponse getCurrencyHistoryPagination(Page<CurrencyConverterEntity> currencyConverterEntityPage);
+
     @Named("getRate")
     default Double getRate(Map<String, Double> quotes) {
         return quotes != null ? quotes.values().stream().findFirst().orElse(null) : null;
@@ -49,7 +60,19 @@ public interface ExchangeMapper {
         return UUID.randomUUID().toString();
     }
 
-
+    default List<CurrencyHistoryResponse> mapToHistoryResponseList(List<CurrencyConverterEntity> entities) {
+        return entities.stream()
+                .map(entity -> new CurrencyHistoryResponse(
+                        entity.getId(),
+                        entity.getBaseCurrency(),
+                        entity.getTargetCurrency(),
+                        entity.getAmount(),
+                        entity.getConvertedAmount(),
+                        entity.getExchangeRate(),
+                        entity.getTransactionId(),
+                        entity.getTransactionDate()))
+                .toList();
+    }
 
 
 } 

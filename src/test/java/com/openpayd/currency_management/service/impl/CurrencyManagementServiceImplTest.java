@@ -7,10 +7,14 @@ import com.openpayd.currency_management.dto.CurrencyConversionDto;
 import com.openpayd.currency_management.entity.CurrencyConverterEntity;
 import com.openpayd.currency_management.exception.CurrencySymbolNotFoundException;
 import com.openpayd.currency_management.exception.CurrencySymbolNullException;
+import com.openpayd.currency_management.exception.TransactionHistoryNotFoundException;
+import com.openpayd.currency_management.exception.TransactionParameterRequiredException;
 import com.openpayd.currency_management.mapper.ExchangeMapper;
 import com.openpayd.currency_management.repository.CurrencyManagementRepository;
 import com.openpayd.currency_management.request.CurrencyConversionRequest;
+import com.openpayd.currency_management.request.CurrencyHistoryRequest;
 import com.openpayd.currency_management.request.ExchangeRateRequest;
+import com.openpayd.currency_management.response.CurrencyConverterHistoryPaginationResponse;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,10 +22,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -48,6 +57,11 @@ class CurrencyManagementServiceImplTest {
     private CurrencyConverterEntity currencyConverterEntity;
     private CurrencyConversionRequest currencyConversionRequest;
     private CurrencyConversionDto currencyConversionDto;
+    private Page<CurrencyConverterEntity> currencyConverterEntityPage;
+    private CurrencyConverterHistoryPaginationResponse currencyConverterHistoryPaginationResponse;
+    private CurrencyHistoryRequest currencyHistoryRequest;
+
+
 
 
 
@@ -86,6 +100,25 @@ class CurrencyManagementServiceImplTest {
                 .amount(currencyConversionRequest.getAmount())
                 .convertedAmount(150.0)
                 .exchangeRate(1.5)
+                .build();
+
+        @SuppressWarnings("unchecked")
+        Page<CurrencyConverterEntity> page = mock(Page.class);
+        currencyConverterEntityPage = page;
+
+        currencyConverterHistoryPaginationResponse = CurrencyConverterHistoryPaginationResponse.builder()
+                .currencyHistoryResponseList(List.of())
+                .totalValue(1L)
+                .totalPages(1L)
+                .currentPage(0L)
+                .viewedValueCount(3L)
+                .build();
+
+        currencyHistoryRequest = CurrencyHistoryRequest.builder()
+                .transactionId(Optional.of("transaction-id"))
+                .transactionDate(Optional.of(LocalDate.now()))
+                .pageNumber(0)
+                .pageSize(3)
                 .build();
 
     }
@@ -261,6 +294,145 @@ class CurrencyManagementServiceImplTest {
         verify(exchangeClient, never()).convertCurrency(anyString(), anyString(), anyString(), anyDouble());
         verify(exchangeMapper, never()).toCurrencyConverterEntity(any());
         verify(currencyManagementRepository, never()).save(any());
+    }
+
+    @Test
+    void currencyHistory_WhenTransactionIdAndDateIsNotNullAndValid_ShouldReturnCurrencyHistoryResponse() {
+
+        when(currencyManagementRepository.findByTransactionIdAndTransactionDate(
+                anyString(),
+                any(LocalDate.class),
+                any(PageRequest.class)
+        )).thenReturn(currencyConverterEntityPage);
+
+        when(currencyConverterEntityPage.hasContent()).thenReturn(true);
+        when(exchangeMapper.getCurrencyHistoryPagination(any())).thenReturn(currencyConverterHistoryPaginationResponse);
+
+        CurrencyConverterHistoryPaginationResponse result = currencyManagementService.getConversionHistory(currencyHistoryRequest);
+
+        assertNotNull(result);
+        assertNotNull(result.getCurrencyHistoryResponseList());
+        assertEquals(1L, result.getTotalValue());
+        assertEquals(1L, result.getTotalPages());
+        assertEquals(0L, result.getCurrentPage());
+        assertEquals(3L, result.getViewedValueCount());
+
+        verify(currencyManagementRepository).findByTransactionIdAndTransactionDate(
+                currencyHistoryRequest.getTransactionId().get(),
+                currencyHistoryRequest.getTransactionDate().get(),
+                PageRequest.of(currencyHistoryRequest.getPageNumber(), currencyHistoryRequest.getPageSize())
+        );
+        verify(exchangeMapper).getCurrencyHistoryPagination(currencyConverterEntityPage);
+    }
+
+    @Test
+    void currencyHistory_WhenOnlyTransactionIdIsPresent_ShouldReturnCurrencyHistoryResponse() {
+
+        currencyHistoryRequest.setTransactionDate(Optional.empty());
+
+        when(currencyManagementRepository.findByTransactionId(
+                anyString(),
+                any(PageRequest.class)
+        )).thenReturn(currencyConverterEntityPage);
+
+        when(currencyConverterEntityPage.hasContent()).thenReturn(true);
+
+        when(exchangeMapper.getCurrencyHistoryPagination(any())).thenReturn(currencyConverterHistoryPaginationResponse);
+
+        CurrencyConverterHistoryPaginationResponse result = currencyManagementService.getConversionHistory(currencyHistoryRequest);
+
+        assertNotNull(result);
+        assertNotNull(result.getCurrencyHistoryResponseList());
+        assertEquals(1L, result.getTotalValue());
+        assertEquals(1L, result.getTotalPages());
+        assertEquals(0L, result.getCurrentPage());
+        assertEquals(3L, result.getViewedValueCount());
+
+        verify(currencyManagementRepository).findByTransactionId(
+                currencyHistoryRequest.getTransactionId().get(),
+                PageRequest.of(currencyHistoryRequest.getPageNumber(), currencyHistoryRequest.getPageSize())
+        );
+        verify(exchangeMapper).getCurrencyHistoryPagination(currencyConverterEntityPage);
+    }
+
+    @Test
+    void currencyHistory_WhenOnlyTransactionDateIsPresent_ShouldReturnCurrencyHistoryResponse() {
+
+        currencyHistoryRequest.setTransactionId(Optional.empty());
+
+        when(currencyManagementRepository.findByTransactionDate(
+                any(LocalDate.class),
+                any(PageRequest.class)
+        )).thenReturn(currencyConverterEntityPage);
+
+        when(currencyConverterEntityPage.hasContent()).thenReturn(true);
+
+        when(exchangeMapper.getCurrencyHistoryPagination(any())).thenReturn(currencyConverterHistoryPaginationResponse);
+
+        CurrencyConverterHistoryPaginationResponse result = currencyManagementService.getConversionHistory(currencyHistoryRequest);
+
+
+        assertNotNull(result);
+        assertNotNull(result.getCurrencyHistoryResponseList());
+        assertEquals(1L, result.getTotalValue());
+        assertEquals(1L, result.getTotalPages());
+        assertEquals(0L, result.getCurrentPage());
+        assertEquals(3L, result.getViewedValueCount());
+
+        verify(currencyManagementRepository).findByTransactionDate(
+                currencyHistoryRequest.getTransactionDate().get(),
+                PageRequest.of(currencyHistoryRequest.getPageNumber(), currencyHistoryRequest.getPageSize())
+        );
+        verify(exchangeMapper).getCurrencyHistoryPagination(currencyConverterEntityPage);
+    }
+
+    @Test
+    void currencyHistory_WhenBothTransactionIdAndDateAreNull_ShouldThrowTransactionParameterRequiredException() {
+
+        currencyHistoryRequest = CurrencyHistoryRequest.builder()
+                .transactionId(Optional.empty())
+                .transactionDate(Optional.empty())
+                .pageNumber(0)
+                .pageSize(3)
+                .build();
+
+
+        TransactionParameterRequiredException exception = assertThrows(
+                TransactionParameterRequiredException.class,
+                () -> currencyManagementService.getConversionHistory(currencyHistoryRequest)
+        );
+
+        assertTrue(exception.getMessage().contains("At least one of transactionId or transactionDate parameters is required"));
+        verify(currencyManagementRepository, never()).findByTransactionIdAndTransactionDate(any(), any(), any());
+        verify(currencyManagementRepository, never()).findByTransactionId(any(), any());
+        verify(currencyManagementRepository, never()).findByTransactionDate(any(), any());
+        verify(exchangeMapper, never()).getCurrencyHistoryPagination(any());
+    }
+
+    @Test
+    void currencyHistory_WhenNoContentFound_ShouldThrowTransactionHistoryNotFoundException() {
+
+        when(currencyManagementRepository.findByTransactionIdAndTransactionDate(
+                anyString(),
+                any(LocalDate.class),
+                any(PageRequest.class)
+        )).thenReturn(currencyConverterEntityPage);
+
+        when(currencyConverterEntityPage.hasContent()).thenReturn(false);
+
+
+        TransactionHistoryNotFoundException exception = assertThrows(
+                TransactionHistoryNotFoundException.class,
+                () -> currencyManagementService.getConversionHistory(currencyHistoryRequest)
+        );
+
+        assertTrue(exception.getMessage().contains("Transaction Id/Date Not Found"));
+        verify(currencyManagementRepository).findByTransactionIdAndTransactionDate(
+                currencyHistoryRequest.getTransactionId().get(),
+                currencyHistoryRequest.getTransactionDate().get(),
+                PageRequest.of(currencyHistoryRequest.getPageNumber(), currencyHistoryRequest.getPageSize())
+        );
+        verify(exchangeMapper, never()).getCurrencyHistoryPagination(any());
     }
 
 

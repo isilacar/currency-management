@@ -8,10 +8,14 @@ import com.openpayd.currency_management.entity.CurrencyConverterEntity;
 import com.openpayd.currency_management.enums.CurrencySymbol;
 import com.openpayd.currency_management.exception.CurrencySymbolNotFoundException;
 import com.openpayd.currency_management.exception.CurrencySymbolNullException;
+import com.openpayd.currency_management.exception.TransactionHistoryNotFoundException;
+import com.openpayd.currency_management.exception.TransactionParameterRequiredException;
 import com.openpayd.currency_management.mapper.ExchangeMapper;
 import com.openpayd.currency_management.repository.CurrencyManagementRepository;
 import com.openpayd.currency_management.request.CurrencyConversionRequest;
+import com.openpayd.currency_management.request.CurrencyHistoryRequest;
 import com.openpayd.currency_management.request.ExchangeRateRequest;
+import com.openpayd.currency_management.response.CurrencyConverterHistoryPaginationResponse;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
 import com.openpayd.currency_management.service.CurrencyManagementService;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +23,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -89,6 +95,56 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
         return exchangeMapper.toCurrencyConversionDto(savedCurrencyConverter);
     }
 
+    public CurrencyConverterHistoryPaginationResponse getConversionHistory(CurrencyHistoryRequest currencyHistoryRequest) {
+        logger.info("Fetching conversion history. Transaction ID: {}, Date: {}",
+                currencyHistoryRequest.getTransactionId().orElse("Not provided"),
+                currencyHistoryRequest.getTransactionDate().orElse(null));
+
+        boolean isTransactionIdPresent = currencyHistoryRequest.getTransactionId().isPresent();
+        boolean isTransactionDatePresent = currencyHistoryRequest.getTransactionDate().isPresent();
+
+        if (!(isTransactionIdPresent) && !(isTransactionDatePresent)){
+            logger.error("No search parameters provided for transaction history");
+            throw new TransactionParameterRequiredException("At least one of transactionId or transactionDate parameters is required for transaction history.");
+        }
+
+        PageRequest pageRequest = PageRequest.of(currencyHistoryRequest.getPageNumber(), currencyHistoryRequest.getPageSize());
+        logger.debug("Page request created - Page: {}, Size: {}",
+                currencyHistoryRequest.getPageNumber(),
+                currencyHistoryRequest.getPageSize());
+
+        Page<CurrencyConverterEntity> result;
+
+        if (isTransactionDatePresent && isTransactionIdPresent) {
+            logger.debug("Searching by both transaction ID and date");
+            result = currencyManagementRepository.findByTransactionIdAndTransactionDate(
+                    currencyHistoryRequest.getTransactionId().get(),
+                    currencyHistoryRequest.getTransactionDate().get(),
+                    pageRequest
+            );
+            checkTransactionHistoryContent(result, "Transaction Id/Date Not Found");
+        } else if (isTransactionIdPresent) {
+            logger.debug("Searching by transaction ID only");
+            result = currencyManagementRepository.findByTransactionId(
+                    currencyHistoryRequest.getTransactionId().get(),
+                    pageRequest
+            );
+            checkTransactionHistoryContent(result, "Transaction Id Not Found: " +
+                    currencyHistoryRequest.getTransactionId().get());
+        } else {
+            logger.debug("Searching by transaction date only");
+            result = currencyManagementRepository.findByTransactionDate(
+                    currencyHistoryRequest.getTransactionDate().get(),
+                    pageRequest
+            );
+            checkTransactionHistoryContent(result, "Transaction Date Not Found: " +
+                    currencyHistoryRequest.getTransactionDate().get());
+        }
+
+        logger.info("Found {} records in transaction history", result.getTotalElements());
+        return exchangeMapper.getCurrencyHistoryPagination(result);
+    }
+
     private static void checkNullCurrency(String currencyConversionRequest, String currencyConversionRequest1, String message) {
         if (Objects.isNull(currencyConversionRequest) ||
                 Objects.isNull(currencyConversionRequest1)) {
@@ -111,6 +167,13 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
                             symbol,
                             Arrays.toString(CurrencySymbol.values()))
             );
+        }
+    }
+
+    private void checkTransactionHistoryContent(Page<CurrencyConverterEntity> result, String message) {
+        if (!result.hasContent()) {
+            logger.error("Transaction history not found: {}", message);
+            throw new TransactionHistoryNotFoundException(message);
         }
     }
 
