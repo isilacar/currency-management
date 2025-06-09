@@ -3,7 +3,9 @@ package com.openpayd.currency_management.controller;
 
 import com.openpayd.currency_management.dto.CurrencyConversionDto;
 import com.openpayd.currency_management.request.CurrencyConversionRequest;
+import com.openpayd.currency_management.request.CurrencyHistoryRequest;
 import com.openpayd.currency_management.request.ExchangeRateRequest;
+import com.openpayd.currency_management.response.CurrencyConverterHistoryPaginationResponse;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
 import com.openpayd.currency_management.service.CurrencyManagementService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -60,6 +62,23 @@ public class CurrencyManagementController {
             @Valid @RequestBody CurrencyConversionRequest currencyConversionRequest
     ) {
         return ResponseEntity.ok(currencyManagementService.currencyConvert(currencyConversionRequest));
+    }
+
+    @Operation(
+            summary = "Get Conversion History",
+            description = "Retrieves the history of currency conversions with pagination support"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Success"),
+            @ApiResponse(responseCode = "400", description = "Invalid parameters"),
+            @ApiResponse(responseCode = "404", description = "History not found"),
+            @ApiResponse(responseCode = "500", description = "Server error")
+    })
+    @PostMapping("/history")
+    public ResponseEntity<CurrencyConverterHistoryPaginationResponse> getConversionHistory(
+            @Valid @RequestBody CurrencyHistoryRequest currencyHistoryRequest
+    ) {
+        return ResponseEntity.ok(currencyManagementService.getConversionHistory(currencyHistoryRequest));
     }
 
 } 
