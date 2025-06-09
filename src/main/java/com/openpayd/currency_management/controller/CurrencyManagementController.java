@@ -1,6 +1,8 @@
 package com.openpayd.currency_management.controller;
 
 
+import com.openpayd.currency_management.dto.CurrencyConversionDto;
+import com.openpayd.currency_management.request.CurrencyConversionRequest;
 import com.openpayd.currency_management.request.ExchangeRateRequest;
 import com.openpayd.currency_management.response.ExchangeRateResponse;
 import com.openpayd.currency_management.service.CurrencyManagementService;
@@ -41,6 +43,23 @@ public class CurrencyManagementController {
         @Valid @RequestBody ExchangeRateRequest exchangeRateRequest
     ) {
         return ResponseEntity.ok(currencyManagementService.getExchangeRate(exchangeRateRequest));
+    }
+
+
+    @Operation(
+            summary = "Convert Currency",
+            description = "Converts an amount from one currency to another using current exchange rates"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Success"),
+            @ApiResponse(responseCode = "400", description = "Invalid parameters"),
+            @ApiResponse(responseCode = "500", description = "Server error")
+    })
+    @PostMapping("/convert")
+    public ResponseEntity<CurrencyConversionDto> currencyConvert(
+            @Valid @RequestBody CurrencyConversionRequest currencyConversionRequest
+    ) {
+        return ResponseEntity.ok(currencyManagementService.currencyConvert(currencyConversionRequest));
     }
 
 } 
