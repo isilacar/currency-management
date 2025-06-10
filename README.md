@@ -18,7 +18,7 @@ This API allows you to query exchange rates, perform currency conversions, view 
 ### Installation
 ```bash
 # Clone the project
-git clone [project-url]
+git clone https://github.com/isilacar/currency-management.git
 
 # Build the project
 mvn clean install
@@ -115,14 +115,24 @@ curl -X POST "http://localhost:8080/api/v1/currency/convert?base=USD&target=EUR&
 
 **Example Request:**
 ```bash
-curl -X GET "http://localhost:8080/api/v1/currency/history?transactionId=TRX123456&pageNumber=0&pageSize=10"
+curl -X POST "http://localhost:8080/api/v1/currency/history?transactionId=TRX123456&pageNumber=0&pageSize=10"
+```
+
+**Request Body With Both TransactionId and TransactionDate:**
+```json
+{
+  "transactionId": "TRX12345",
+  "transactionDate": "2025-06-10",
+  "pageNumber": 0,
+  "pageSize": 1
+}
 ```
 
 **Success Response:**
 ```json
 {
     "currencyHistoryResponseList": [
-        {ü
+        {
             "id":3,
             "baseCurrency": "USD",
             "targetCurrency": "EUR",
@@ -130,13 +140,13 @@ curl -X GET "http://localhost:8080/api/v1/currency/history?transactionId=TRX1234
             "convertedAmount": 150,
             "exchangeRate": 1.5,
             "transactionId": "TRX123456",
-            "transactionDate": "2024-03-19"
+            "transactionDate": "2025-06-09"
         }
     ],
     "totalValue": 1,
     "totalPages": 1,
     "currentPage": 0,
-    "viewedValueCount": 10
+    "viewedValueCount": 1
 }
 ```
 
@@ -168,7 +178,7 @@ EUR,TRY,200
         "convertedAmount": 150,
         "exchangeRate": 1.5,
         "transactionId": "TRX123456",
-        "transactionDate": "2024-03-19"
+        "transactionDate": "2025-06-09"
     },
     {
         "baseCurrency": "EUR",
@@ -177,7 +187,7 @@ EUR,TRY,200
         "convertedAmount": 300,
         "exchangeRate": 1.5,
         "transactionId": "TRX123457",
-        "transactionDate": "2024-03-19"
+        "transactionDate": "2025-06-09"
     }
 ]
 ```
@@ -196,14 +206,14 @@ EUR,TRY,200
 **Example Error Response:**
 ```json
 {
-    "timestamp": "2024-03-19 10:30:00",
+    "timestamp": "2025-06-09 10:30:00",
     "errorCode": "INVALID_CURRENCY_SYMBOL",
-    "message": "Invalid currency code: INVALID. Valid codes: [USD, EUR, TRY]",
-    "path": "/api/v1/exchange-rate"
+    "message": "Invalid currency code: INVALID. Some Valid codes: [USD, EUR, TRY]",
+    "path": "/api/v1/currency/exchange-rate"
 }
 ```
 
-## Some Supported Currencies Symbols
+## Some Supported Currency Symbols
 
 - USD (US Dollar)
 - EUR (Euro)
@@ -219,13 +229,11 @@ EUR,TRY,200
 ## Security
 
 - API key required
-- Rate limiting applied
-- All requests must be made over HTTPS
 
 ## Cache
 
-- Exchange rates are cached for 1 hour
-- Cache is automatically updated after expiration
+- Cache is cleared at midnight
+- New cache is created on first request after expiration
 
 ## Version History
 
