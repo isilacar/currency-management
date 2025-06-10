@@ -162,51 +162,88 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
         List<CurrencyConversionResponse> responses = new ArrayList<>();
 
         for (CurrencyConversionRequest request : requests) {
-            logger.info("Processing: {}/{} - Amount: {}",
-                    request.getBase(), request.getTarget(), request.getAmount());
-
-            if (Objects.isNull(request.getBase()) || Objects.isNull(request.getTarget()) || Objects.isNull(request.getAmount())) {
-                logger.error("Null values found in bulk conversion request. Base: {}, Target: {}, Amount: {}",
+            try {
+                logger.info("Processing: {}/{} - Amount: {}",
                         request.getBase(), request.getTarget(), request.getAmount());
-                throw BulkCurrencyConversionException.invalidRequest(
-                        request.getBase(),
-                        request.getTarget(),
-                        request.getAmount()
-                );
-            }
 
-            validateCurrencySymbol(request.getBase(), "base");
-            validateCurrencySymbol(request.getTarget(), "target");
+                checkingRequestNullValues(request);
 
-            if (request.getAmount() <= 0) {
-                logger.error("Invalid amount in bulk conversion: {} for {}/{}",
+                validateCurrencySymbol(request.getBase(), "base");
+                validateCurrencySymbol(request.getTarget(), "target");
+
+                checkingAmountValue(request);
+
+                logger.debug("Making API call for bulk conversion: {} {} to {}",
                         request.getAmount(), request.getBase(), request.getTarget());
 
-                throw BulkCurrencyConversionException.invalidAmount(
+                CurrencyConversionApiResponse response = exchangeClient.convertCurrency(
+                        apiKey,
                         request.getBase(),
                         request.getTarget(),
                         request.getAmount()
                 );
-            }
 
-            logger.debug("Making API call for bulk conversion: {} {} to {}",
+                if (response == null || !response.isSuccess() || response.getResult() == 0 ||
+                        response.getInfo() == null || response.getInfo().getQuote() == 0) {
+                    logger.error("Invalid API response for conversion: {}/{} - Amount: {}",
+                            request.getBase(), request.getTarget(), request.getAmount());
+                    continue;
+                }
+
+                CurrencyConverterEntity entity = exchangeMapper.convertCurrency(request, response);
+                CurrencyConverterEntity savedEntity = currencyManagementRepository.save(entity);
+                responses.add(exchangeMapper.toCurrencyConversionResponse(savedEntity));
+                logger.info("Success: {}/{} - Amount: {}",
+                        request.getBase(), request.getTarget(), request.getAmount());
+
+                // Adding delay between API calls to handle rate limiting and ensure response completeness
+                // The external API typically takes 500ms to respond, so we wait 600ms between calls
+                Thread.sleep(600);
+            } catch (InterruptedException interruptedException){
+                logger.error("Error processing conversion: {}/{} - Amount: {}",
+                        request.getBase(), request.getTarget(), request.getAmount(), interruptedException);
+            }
+        }
+
+        checkResponseContent(responses);
+
+        logger.info("Bulk conversion completed. Processed {} requests successfully", responses.size());
+        return responses;
+    }
+
+    private static void checkResponseContent(List<CurrencyConversionResponse> responses) {
+        if (responses.isEmpty()) {
+            throw new BulkCurrencyConversionException(
+                    "No successful conversions found",
+                    null, null, null,
+                    "NO_SUCCESSFUL_CONVERSIONS"
+            );
+        }
+    }
+
+    private static void checkingAmountValue(CurrencyConversionRequest request) {
+        if (request.getAmount() <= 0) {
+            logger.error("Invalid amount in bulk conversion: {} for {}/{}",
                     request.getAmount(), request.getBase(), request.getTarget());
-            CurrencyConversionApiResponse response = exchangeClient.convertCurrency(
-                    apiKey,
+
+            throw BulkCurrencyConversionException.invalidAmount(
                     request.getBase(),
                     request.getTarget(),
                     request.getAmount()
             );
-
-            CurrencyConverterEntity entity = exchangeMapper.convertCurrency(request, response);
-            CurrencyConverterEntity savedEntity = currencyManagementRepository.save(entity);
-            responses.add(exchangeMapper.toCurrencyConversionResponse(savedEntity));
-            logger.info("Success: {}/{} - Amount: {}",
-                    request.getBase(), request.getTarget(), request.getAmount());
         }
+    }
 
-        logger.info("Bulk conversion completed. Processed {} requests successfully", responses.size());
-        return responses;
+    private static void checkingRequestNullValues(CurrencyConversionRequest request) {
+        if (Objects.isNull(request.getBase()) || Objects.isNull(request.getTarget())) {
+            logger.error("Null values found in bulk conversion request. Base: {}, Target: {}",
+                    request.getBase(), request.getTarget());
+            throw BulkCurrencyConversionException.invalidRequest(
+                    request.getBase(),
+                    request.getTarget(),
+                    request.getAmount()
+            );
+        }
     }
 
     private List<CurrencyConversionRequest> getRequests(MultipartFile file) {

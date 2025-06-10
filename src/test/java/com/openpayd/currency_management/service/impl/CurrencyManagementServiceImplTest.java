@@ -633,7 +633,7 @@ class CurrencyManagementServiceImplTest {
 
         response.setInfo(info);
         response.setResult(amount * 1.5);
-
+        response.setSuccess(true);
         return response;
     }
 
