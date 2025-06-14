@@ -2,6 +2,8 @@
 
 This API allows you to query exchange rates, perform currency conversions, view conversion history and bulk currency conversion operation with CSV file.
 
+> ⚠️ **Important:** The external API allows only 100 requests per month per API key under the free version.
+
 ## Table of Contents
 - [Getting Started](#getting-started)
 - [API Endpoints](#api-endpoints)

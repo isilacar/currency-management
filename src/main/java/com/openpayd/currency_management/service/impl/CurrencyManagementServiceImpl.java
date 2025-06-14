@@ -50,7 +50,7 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
 
     @Cacheable(value = "exchangeRates", key = "T(java.lang.String).valueOf(#exchangeRateRequest.base).toUpperCase() + '-' + T(java.lang.String).valueOf(#exchangeRateRequest.target).toUpperCase()")
     public ExchangeRateResponse getExchangeRate(ExchangeRateRequest exchangeRateRequest) {
-        logger.info("Fetching data from API: {}-{}", 
+        logger.info("Fetching data from API: {}-{}",
             exchangeRateRequest.getBase(), 
             exchangeRateRequest.getTarget());
 
@@ -196,10 +196,9 @@ public class CurrencyManagementServiceImpl implements CurrencyManagementService 
                 logger.info("Success: {}/{} - Amount: {}",
                         request.getBase(), request.getTarget(), request.getAmount());
 
-                // Adding delay between API calls to handle rate limiting and ensure response completeness
-                // The external API typically takes 500ms to respond, so we wait 600ms between calls
+                // Manually adding a 600ms delay between calls to reduce request frequency, based on the external API's typical 500ms response time.
                 Thread.sleep(600);
-            } catch (InterruptedException interruptedException){
+            } catch (InterruptedException interruptedException) {
                 logger.error("Error processing conversion: {}/{} - Amount: {}",
                         request.getBase(), request.getTarget(), request.getAmount(), interruptedException);
             }
